@@ -1,7 +1,18 @@
 'use strict';
 // 运行时配置：全部来自环境变量（systemd EnvironmentFile / docker-compose environment）。
 // 业务设置（公网地址、隧道网段等）保存在数据库，可在面板里修改。
+const fs = require('node:fs');
 const path = require('node:path');
+
+// 支持项目根目录下的 .env（宝塔 Node 项目等无法方便设置环境变量的场景）；已存在的环境变量优先
+const envFile = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envFile)) {
+  try {
+    process.loadEnvFile(envFile);
+  } catch (e) {
+    console.error(`读取 ${envFile} 失败: ${e.message}`);
+  }
+}
 
 const env = process.env;
 const mock = env.MOCK === '1' || process.argv.includes('--mock');

@@ -43,7 +43,7 @@
 - `UDP 500`、`UDP 4500`：IPsec（必需）
 - `TCP 8443`：面板（如果用 Nginx 反代，就放行 443）
 
-两种部署方式二选一。
+以下部署方式任选一种。
 
 ### 方式一：Docker
 
@@ -93,6 +93,38 @@ ipsec-panel status              # strongSwan 状态、站点和在线用户
 ipsec-panel reload              # 重新生成并加载配置
 ipsec-panel reset-password      # 重置管理员密码
 ```
+
+### 方式三：宝塔面板 Node 项目
+
+适合已经在用宝塔、想在宝塔里统一管理进程和域名的情况。strongSwan 仍然要用脚本安装，但跳过面板的 systemd 服务：
+
+```bash
+sudo -i
+cd /www/wwwroot
+git clone https://github.com/juryory/IPsec-panel.git
+cd IPsec-panel
+bash scripts/install.sh --no-service
+```
+
+这个脚本会：
+
+- 安装并启动 strongSwan，开启 IP 转发。
+- 在项目目录下生成 `.env` 配置文件：面板监听 `127.0.0.1:8088`，使用 HTTP，并信任反向代理。
+- 如果之前用 systemd 方式装过面板，会把那个服务停掉，数据保留。
+
+然后在宝塔里操作：**网站 → Node 项目 → 添加 Node 项目**
+
+| 选项 | 填写 |
+|---|---|
+| 项目目录 | `/www/wwwroot/IPsec-panel` |
+| 启动选项 | `npm run start`（或启动文件 `src/server.js`） |
+| 项目端口 | `8088` |
+| **运行用户** | **root**（必须选 root，面板要写 strongSwan 配置、调用 iptables） |
+| Node 版本 | 22.13 及以上 |
+
+添加完成后，绑定域名并开启 SSL。管理员密码在 `/var/lib/ipsec-panel/initial-password.txt` 里。
+
+以后升级：先 `cd /www/wwwroot/IPsec-panel && git pull`，然后在宝塔里重启这个项目。
 
 ### 本地开发
 

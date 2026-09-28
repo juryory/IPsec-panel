@@ -7,6 +7,7 @@
 #   bash scripts/install.sh --cn            # 使用国内镜像下载 Node.js 和 npm 依赖
 #   bash scripts/install.sh --behind-proxy  # 面板只监听 127.0.0.1:8088（HTTP），由 Nginx/宝塔反代
 #   bash scripts/install.sh --port 9443
+#   bash scripts/install.sh --no-service    # 只安装 strongSwan 和系统设置，面板由宝塔 Node 项目等自行运行
 # 重复执行即为升级，数据和配置会保留。
 set -euo pipefail
 
@@ -23,6 +24,7 @@ PANEL_HOST=0.0.0.0
 PANEL_PORT=8443
 PANEL_TLS=auto
 TRUST_PROXY=0
+NO_SERVICE=0
 
 c_green='\033[32m'; c_yellow='\033[33m'; c_red='\033[31m'; c_off='\033[0m'
 info() { echo -e "${c_green}==>${c_off} $*"; }
@@ -36,7 +38,8 @@ while [ $# -gt 0 ]; do
     --behind-proxy) PANEL_HOST=127.0.0.1; PANEL_TLS=off; TRUST_PROXY=1; [ $PORT_SET = 1 ] || PANEL_PORT=8088 ;;
     --port) PANEL_PORT="$2"; PORT_SET=1; shift ;;
     --host) PANEL_HOST="$2"; shift ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    --no-service) NO_SERVICE=1; PANEL_HOST=127.0.0.1; PANEL_TLS=off; TRUST_PROXY=1; [ $PORT_SET = 1 ] || PANEL_PORT=8088 ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) die "未知参数: $1" ;;
   esac
   shift
@@ -107,6 +110,86 @@ if [ ! -f "$SWANCTL_CONF" ]; then
   echo 'include conf.d/*.conf' > "$SWANCTL_CONF"
 elif ! grep -Eq '^[[:space:]]*include[[:space:]]+conf\.d/\*\.conf' "$SWANCTL_CONF"; then
   echo 'include conf.d/*.conf' >> "$SWANCTL_CONF"
+fi
+
+# ---------------------------------------------------------------- 系统设置（函数）
+setup_system() {
+  cat > /etc/sysctl.d/90-ipsec-panel.conf <<EOF
+net.ipv4.ip_forward = 1
+EOF
+  sysctl -p /etc/sysctl.d/90-ipsec-panel.conf >/dev/null || true
+
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    info "放行 ufw 端口"
+    ufw allow 500/udp >/dev/null; ufw allow 4500/udp >/dev/null
+    [ "$PANEL_HOST" = 127.0.0.1 ] || ufw allow "$PANEL_PORT/tcp" >/dev/null
+  fi
+  if command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+    info "放行 firewalld 端口"
+    firewall-cmd --permanent --add-service=ipsec >/dev/null
+    [ "$PANEL_HOST" = 127.0.0.1 ] || firewall-cmd --permanent --add-port="$PANEL_PORT/tcp" >/dev/null
+    firewall-cmd --reload >/dev/null
+    warn "firewalld 可能拦截转发流量，如站点之间或用户到站点不通，可执行：firewall-cmd --permanent --zone=trusted --add-source=<隧道网段与各站点网段> && firewall-cmd --reload"
+  fi
+
+  info "启动 strongSwan（$SS_SERVICE）"
+  systemctl daemon-reload
+  systemctl enable "$SS_SERVICE" >/dev/null 2>&1 || true
+  systemctl restart "$SS_SERVICE"
+}
+
+# ---------------------------------------------------------------- 仅系统环境（宝塔 Node 项目等）
+if [ $NO_SERVICE = 1 ]; then
+  setup_system
+  # 之前用 systemd 方式装过的面板要停掉，避免两个面板同时管理 strongSwan、抢端口
+  if systemctl list-unit-files 2>/dev/null | grep -q '^ipsec-panel.service'; then
+    info "停用 systemd 方式运行的面板（数据保留）"
+    systemctl disable --now ipsec-panel >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/ipsec-panel.service
+    systemctl daemon-reload
+  fi
+  mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
+  if [ ! -f "$SRC_DIR/.env" ]; then
+    cat > "$SRC_DIR/.env" <<EOF
+# IPsec Panel 运行配置（宝塔 Node 项目会读取此文件，修改后在宝塔中重启项目）
+PANEL_HOST=$PANEL_HOST
+PANEL_PORT=$PANEL_PORT
+PANEL_TLS=$PANEL_TLS
+TRUST_PROXY=$TRUST_PROXY
+DATA_DIR=$DATA_DIR
+SWANCTL_DIR=$SWANCTL_DIR
+VICI_SOCKET=/var/run/charon.vici
+STRONGSWAN_RESTART_CMD="systemctl restart $SS_SERVICE"
+JOURNAL_UNIT=$SS_SERVICE
+CHARON_LOG=$LOG_DIR/charon.log
+POLL_INTERVAL=30
+EOF
+    chmod 600 "$SRC_DIR/.env"
+    info "已生成 $SRC_DIR/.env"
+  else
+    info "保留已有 $SRC_DIR/.env"
+  fi
+  NODE_CMD="$(command -v node || echo node)"
+  cat > /usr/local/bin/ipsec-panel <<EOF
+#!/usr/bin/env bash
+# IPsec Panel 命令行：ipsec-panel status | reload | reset-password [密码]
+exec $NODE_CMD $SRC_DIR/src/cli.js "\$@"
+EOF
+  chmod 755 /usr/local/bin/ipsec-panel
+  echo
+  echo "=================================================================="
+  echo " strongSwan 与系统环境已就绪，接下来在宝塔中添加 Node 项目："
+  echo "   项目目录:  $SRC_DIR"
+  echo "   启动选项:  npm run start（或启动文件 src/server.js）"
+  echo "   项目端口:  $PANEL_PORT"
+  echo "   运行用户:  root   ← 必须是 root"
+  echo "   Node 版本: 22.13 及以上"
+  echo "   然后绑定域名、开启 SSL，宝塔会自动反代到 127.0.0.1:$PANEL_PORT"
+  echo
+  echo " 首次启动后的管理员密码：cat $DATA_DIR/initial-password.txt"
+  echo " 还需要：在云服务器安全组和宝塔安全中放行 UDP 500、UDP 4500"
+  echo "=================================================================="
+  exit 0
 fi
 
 # ---------------------------------------------------------------- Node.js
@@ -200,30 +283,11 @@ EOF
 chmod 755 /usr/local/bin/ipsec-panel
 
 # ---------------------------------------------------------------- 系统设置
-cat > /etc/sysctl.d/90-ipsec-panel.conf <<EOF
-net.ipv4.ip_forward = 1
-EOF
-sysctl -p /etc/sysctl.d/90-ipsec-panel.conf >/dev/null || true
-
-if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
-  info "放行 ufw 端口"
-  ufw allow 500/udp >/dev/null; ufw allow 4500/udp >/dev/null
-  [ "$PANEL_HOST" = 127.0.0.1 ] || ufw allow "$PANEL_PORT/tcp" >/dev/null
-fi
-if command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
-  info "放行 firewalld 端口"
-  firewall-cmd --permanent --add-service=ipsec >/dev/null
-  [ "$PANEL_HOST" = 127.0.0.1 ] || firewall-cmd --permanent --add-port="$PANEL_PORT/tcp" >/dev/null
-  firewall-cmd --reload >/dev/null
-  warn "firewalld 可能拦截转发流量，如站点之间或用户到站点不通，可执行：firewall-cmd --permanent --zone=trusted --add-source=<隧道网段与各站点网段> && firewall-cmd --reload"
-fi
+setup_system
 
 # ---------------------------------------------------------------- 启动
-info "启动 strongSwan（$SS_SERVICE）"
-systemctl daemon-reload
-systemctl enable "$SS_SERVICE" >/dev/null 2>&1 || true
-systemctl restart "$SS_SERVICE"
 info "启动面板"
+systemctl daemon-reload
 systemctl enable ipsec-panel >/dev/null
 systemctl restart ipsec-panel
 
