@@ -176,13 +176,15 @@ TRUST_PROXY=$TRUST_PROXY
 DATA_DIR=$DATA_DIR
 SWANCTL_DIR=$SWANCTL_DIR
 VICI_SOCKET=/var/run/charon.vici
-STRONGSWAN_RESTART_CMD=systemctl restart $SS_SERVICE
+STRONGSWAN_RESTART_CMD="systemctl restart $SS_SERVICE"
 JOURNAL_UNIT=$SS_SERVICE
 CHARON_LOG=$LOG_DIR/charon.log
 POLL_INTERVAL=30
 EOF
   chmod 600 "$ENV_FILE"
 else
+  # 修复旧版本写入的未加引号的值（bash source 时会把空格后的内容当成命令）
+  sed -i -E 's/^(STRONGSWAN_RESTART_CMD)=([^"].* .*)$/\1="\2"/' "$ENV_FILE"
   info "保留已有配置 $ENV_FILE（--port/--behind-proxy 等参数只在首次安装时生效，如需修改请编辑该文件）"
 fi
 
