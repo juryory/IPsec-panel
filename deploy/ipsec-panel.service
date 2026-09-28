@@ -1,0 +1,19 @@
+[Unit]
+Description=IPsec Panel (strongSwan management panel)
+Documentation=https://github.com/juryory/IPsec-panel
+After=network-online.target __STRONGSWAN_SERVICE__.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/ipsec-panel/panel.env
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__NODE_BIN__ __INSTALL_DIR__/src/server.js
+Restart=always
+RestartSec=3
+# 需要 root：写 /etc/swanctl、调用 swanctl / iptables / ip
+User=root
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

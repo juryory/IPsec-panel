@@ -1,0 +1,21 @@
+{
+  "name": "ipsec-panel",
+  "version": "3.0.0",
+  "description": "基于 strongSwan 的 IPsec 管理面板：H3C 站点接入、远程用户、站点互通、流量监控",
+  "main": "src/server.js",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js --mock",
+    "cli": "node src/cli.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ssh2": "^1.16.0"
+  }
+}

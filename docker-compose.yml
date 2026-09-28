@@ -1,0 +1,29 @@
+services:
+  ipsec-panel:
+    build:
+      context: .
+      # 国内服务器构建慢可以打开下面两行
+      # args:
+      #   APT_MIRROR: mirrors.aliyun.com
+      #   NPM_REGISTRY: https://registry.npmmirror.com
+    image: ipsec-panel:latest
+    container_name: ipsec-panel
+    restart: unless-stopped
+    # IPsec 需要直接使用宿主机网络（UDP 500/4500、XFRM 策略、路由）
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    init: true
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: Asia/Shanghai
+      # 面板监听地址与端口（host 网络，直接占用宿主机端口）
+      PANEL_HOST: 0.0.0.0
+      PANEL_PORT: 8443
+      # auto: 自签 HTTPS；off: HTTP（放在 Nginx 反代后面时用，并设 PANEL_HOST=127.0.0.1、TRUST_PROXY=1）
+      PANEL_TLS: auto
+      # 首次启动的管理员账号，不设置密码则随机生成并打印到日志 / data/initial-password.txt
+      ADMIN_USER: admin
+      # ADMIN_PASSWORD: change-me

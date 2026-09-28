@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPsec Panel</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 6l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V9z' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <div class="brand big"><span class="logo"></span>IPsec Panel</div>
+      <label>用户名<input name="username" autocomplete="username" required></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <div class="login-error" id="login-error"></div>
+      <button class="btn primary block" type="submit">登录</button>
+    </form>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="logo"></span>IPsec Panel</div>
+      <nav id="nav">
+        <a href="#/overview" data-page="overview">概览</a>
+        <a href="#/sites" data-page="sites">站点（H3C）</a>
+        <a href="#/users" data-page="users">远程用户</a>
+        <a href="#/connections" data-page="connections">在线连接</a>
+        <a href="#/traffic" data-page="traffic">流量统计</a>
+        <a href="#/logs" data-page="logs">日志</a>
+        <a href="#/settings" data-page="settings">设置</a>
+      </nav>
+      <div class="sidebar-foot">
+        <span id="whoami"></span>
+        <button class="btn link" data-act="logout">退出</button>
+      </div>
+    </aside>
+    <main id="main" class="main"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toasts" class="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>
